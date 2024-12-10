@@ -74,33 +74,34 @@ async def create_user_service(user: CreateUser):
     }
 
 async def update_user_service(username: str, user_data: UpdateUser):
+    
     try:
         db = await Db()  # Initialize database connection
-        query = """
+        
+        # Filter fields dynamically based on input
+        fields_to_update = {key: value for key, value in user_data.dict().items() if value is not None}
+        
+        if not fields_to_update:
+            raise HTTPException(status_code=400, detail="No fields provided to update.")
+
+        # Build dynamic query
+        set_clauses = ", ".join([f"{field} = ${index}" for index, field in enumerate(fields_to_update.keys(), start=1)])
+        query = f"""
         UPDATE users
-        SET phone = $1, department = $2, shift_information = $3, employee_type = $4, 
-            job_position = $5, reporting_manager = $6, work_location = $7, work_type = $8, 
-            salary = $9, company = $10, bank_name = $11, branch = $12, bank_address = $13, 
-            bank_code_1 = $14, bank_code_2 = $15, account_number = $16, bank_country = $17, 
-            address_line_1 = $18, address_line_2 = $19, city = $20, district = $21, 
-            state = $22, country = $23, postal_code = $24, updated_at = CURRENT_TIMESTAMP
-        WHERE username = $25
+        SET {set_clauses}, updated_at = CURRENT_TIMESTAMP
+        WHERE username = ${len(fields_to_update) + 1}
         RETURNING id, username, phone, department, shift_information, employee_type, job_position, 
                   reporting_manager, work_location, work_type, salary, company, bank_name, branch, 
                   bank_address, bank_code_1, bank_code_2, account_number, bank_country, address_line_1, 
                   address_line_2, city, district, state, country, postal_code, updated_at;
         """
-        values = [
-            user_data.phone, user_data.department, user_data.shift_information, user_data.employee_type,
-            user_data.job_position, user_data.reporting_manager, user_data.work_location, user_data.work_type,
-            user_data.salary, user_data.company, user_data.bank_name, user_data.branch, user_data.bank_address,
-            user_data.bank_code_1, user_data.bank_code_2, user_data.account_number, user_data.bank_country,
-            user_data.address_line_1, user_data.address_line_2, user_data.city, user_data.district,
-            user_data.state, user_data.country, user_data.postal_code, username
-        ]
+        
+        # Prepare query values
+        values = list(fields_to_update.values()) + [username]
 
+        # Execute the query
         async with db.transaction():
-            updated_user = await db.fetchrow(query, *values)  # Correct asyncpg method
+            updated_user: Record = await db.fetchrow(query, *values)
 
         if not updated_user:
             raise HTTPException(status_code=404, detail="User not found or update failed.")
